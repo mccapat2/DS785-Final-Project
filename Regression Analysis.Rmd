@@ -1,0 +1,110 @@
+---
+title: "DS785 Project Regression Analysis"
+author: "Patrick McCarthy"
+date: "8/10/2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+Initial Data Load and Filtering
+Removed any "Total" type columns that would correlate with more rounds played
+```{r}
+golfx <- read_csv("~/Documents/DS Capstone Project/Datasets/golf_reg.csv")
+```
+
+
+Setting up our Training and Testing data (70/30 split)
+```{r}
+set.seed(123) 
+
+index = sample(1:nrow(golfx), 0.7*nrow(golfx)) 
+
+train = golfx[index,] # Create the training data 
+test = (golfx[-index, ]) # Create the test data
+
+dim(train)
+dim(test)
+```
+
+Probably Keep, Check p variable
+```{r}
+n = dim(golfx)[1]
+
+# fit models
+x = model.matrix(`Scoring Average_Actual`~., data = train)[,-(1)]
+x_test = model.matrix(`Scoring Average_Actual`~., data = test)[,-(1)]
+
+y = unlist(train[,1])
+y_test = unlist(test[,1])
+p = dim(x)[2]
+```
+
+
+Lasso
+```{r}
+library(glmnet)
+set.seed(123)
+lambdalist = c((1:100)/100)
+
+lasso_mod = glmnet(x, 
+                   y, 
+                   alpha = 1, 
+                   lambda = lambdalist) # Fit lasso model on training data
+
+plot(lasso_mod) 
+```
+Coefficients on Y-axis and log lambda on x-axis. Coefficients shrink to 0 with a Log lambda around -2
+```{r}
+plot(lasso_mod, xvar = "lambda")
+```
+
+
+Cross validated test to find the best Lambda, Plot shows how many predictor variables should be used (12)
+```{r}
+cv.out = cv.glmnet(x, y, alpha = 1) # Fit lasso model on training data
+plot(cv.out) # Draw plot of training MSE as a function of lambda
+bestlam = cv.out$lambda.min # Select lamda that minimizes training MSE
+lasso_pred = predict(lasso_mod, s = bestlam, newx = x_test) # Use best lambda to predict test data
+mean((lasso_pred - y_test)^2) # Calculate test MSE
+```
+best coef
+```{r}
+bestlam2 <- cv.out$lambda.1se
+best_model <- glmnet(x, y, alpha = 1, lambda = bestlam2)
+coef(best_model)
+```
+
+
+Fit on full dataset
+```{r}
+out = glmnet(x, y, alpha = 1, lambda = bestlam2) # Fit lasso model on full dataset
+lasso_coef = predict(out, type = "coefficients", s = bestlam2)[1:18,] # Display coefficients using lambda chosen by CV
+lasso_coef
+```
+
+Filtering out zero coefficients
+```{r}
+lasso_coef[lasso_coef != 0] # Display only non-zero coefficients
+```
+
+RMSE Test
+```{r}
+lasso_refit <- cbind(lasso_pred, test)
+RMSE = mean((lasso_refit$`Scoring Average_Actual` - lasso_refit$s1)^2) %>% sqrt()
+RMSE
+```
+
+Another RMSE and R2 test
+The model can explain 90.9% of the variation in Scoring Average Actual
+```{r}
+RMSE(lasso_refit$s1, lasso_refit$`Scoring Average_Actual`)
+R2(lasso_refit$s1, lasso_refit$`Scoring Average_Actual`)
+```
+
+Output Table for Paper
+```{r}
+write_csv(lasso_refit,"~/Documents/DS Capstone Project/Datasets/lasso_out.csv")
+```

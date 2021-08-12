@@ -1,0 +1,166 @@
+---
+title: "PGA Golf Exploratory and Correlaton Analysis"
+author: "Patrick McCarthy"
+date: "7/22/2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## R Markdown
+
+Libraries
+```{r warning=FALSE}
+library(dplyr)
+library(readr)
+library(tidyr)
+library(ggplot2)
+library(MASS)
+```
+
+Initial Data load
+```{r}
+golf <- read_csv("~/Documents/DS Capstone Project/Datasets/golf_fields_avgs_trim.csv")
+```
+
+```{r}
+summary(golf)
+```
+
+Filtering out any player who didn't have more than 40 rounds (less than 1st Quartile) on the year.
+```{r}
+golf2 <- golf %>%
+  filter(golf$rounds_played >= 40)
+```
+
+```{r}
+summary(golf2)
+```
+
+Drop NA rows to get dataset with complete metrics for initial analysis
+```{r}
+golf3 <- golf2 %>%
+  drop_na()
+```
+
+```{r}
+summary(golf3)
+```
+
+Plot to show how driving distance has increased dramatically over the years and why previous modeling on metrics should be updated now that driving has changed
+```{r}
+ggplot(golf2 %>% group_by(year) %>% summarise(driving=mean(`Driving Distance_AVG`)), aes(x=year, y=driving)) +
+  xlab("Year") +
+  ylab("Average Driving Distance (yds)") +
+  labs(title = "PGA Driving Distance over Time") +
+  geom_point() +
+  stat_smooth()
+```
+```{r}
+ggplot(golf2 %>% group_by(year) %>% summarise(scoring=mean(`Scoring Average_Actual`)), aes(x=year, y=scoring)) +
+  geom_point() +
+  xlab("Year") +
+  ylab("Scoring Average (Actual)") +
+  labs(title = "Scoring Average Actual over Time") +
+  stat_smooth()
+```
+```{r}
+ggplot(golf2 %>% group_by(year) %>% summarise(gir=mean(`GIR_%`)), aes(x=year, y=gir)) +
+  geom_point() +
+  xlab("Year") +
+  ylab("GIR %") +
+  labs(title = "Greens in Regulation over Time") +
+  stat_smooth()
+```
+```{r}
+ggplot(golf2 %>% group_by(year) %>% summarise(driving_acc=mean(`Driving Accuracy_%`)), aes(x=year, y=driving_acc)) +
+  geom_point() +
+  xlab("Year") +
+  ylab("Driving Accuracy %") +
+  labs(title = "Driving Accuracy Percentage over Time") +
+  stat_smooth()
+```
+
+CORRELATION TESTING
+```{r}
+library(corrplot)
+#correlation dataset
+golf_cor <- dplyr::select(golf3, -c(player,year, rounds_played, `Top 10 Finishes`, `First Place Finishes`, `Second Place Finishes`, `Third Place Finishes`))
+res <- cor(golf_cor)
+
+#correlogram
+corrplot(res, type = "upper", tl.pos = "td", tl.cex = 0.5, order = "hclust", tl.col = "black", sig.level = .05, title = "Correlation Plot of PGA Tour Statistics")
+```
+Density Plot to Show Normality
+```{r}
+golf_cor %>%
+  #keep(is.numeric) %>%
+  gather() %>%
+  ggplot(aes(value)) +
+    facet_wrap(~ key, scales = "free") +
+    geom_density()
+```
+
+```{r}
+# ++++++++++++++++++++++++++++
+# flattenCorrMatrix
+# ++++++++++++++++++++++++++++
+# cormat : matrix of the correlation coefficients
+# pmat : matrix of the correlation p-values
+flattenCorrMatrix <- function(cormat, pmat) {
+  ut <- upper.tri(cormat)
+  data.frame(
+    row = rownames(cormat)[row(cormat)[ut]],
+    column = rownames(cormat)[col(cormat)[ut]],
+    cor  =(cormat)[ut],
+    p = pmat[ut]
+    )
+}
+```
+
+Flattened Correlation Dataframe with P value
+```{r}
+library(Hmisc)
+res2 <- rcorr(as.matrix(golf_cor))
+flat_res <- flattenCorrMatrix(res2$r, res2$P)
+```
+Filtered Corr Table from above
+```{r}
+flat_res_trim <- flat_res %>%
+  filter(flat_res$cor < -0.55 | flat_res$cor > 0.55)
+```
+Export Filtered Correlation Table
+```{r}
+write.csv(flat_res_trim, "~/Documents/DS Capstone Project/Datasets/flat_res_trim2.csv", row.names = FALSE)
+```
+
+Additional Testing
+Correlation Test
+```{r}
+cor.test(golf_cor$`Scoring Average`, golf_cor$`Top 10 Finishes`, method = "pearson")
+```
+
+Scatter Plot between a Positively Correlated Pair of Variables
+```{r}
+library(ggpubr)
+ggscatter(golf_cor, x = "Scoring Average", y = "Top 10 Finishes",
+          add = "reg.line", conf.int = TRUE,
+          cor.coef = TRUE, cor.method = "pearson",
+          xlab = "Scoring Average", ylab = "Top 10 Finishes")
+```
+```{r}
+ggscatter(golf_cor, x = "GIR_%", y = "Scoring Average_Actual",
+          add = "reg.line", conf.int = TRUE,
+          cor.coef = TRUE, cor.method = "pearson",
+          xlab = "GIR", ylab = "Scoring Average Actual")
+```
+```{r}
+ggscatter(golf_cor, x = "Final Round Scoring Average_TOTAL ROUNDS", y = "Scrambling_PAR OR BETTER",
+          add = "reg.line", conf.int = TRUE,
+          cor.coef = TRUE, cor.method = "pearson",
+          xlab = "Final Rounds", ylab = "Scrambling Par or Better")
+```
+
+
